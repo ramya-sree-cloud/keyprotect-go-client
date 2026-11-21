@@ -13,6 +13,17 @@
 #define ERR_AUTH 4
 
 /**
+ * C-compatible credential struct for `CreateSessionMultiAuthC`.
+ *
+ * The caller fills an array of these and passes a pointer + length.
+ */
+typedef struct CAuthCred {
+  const char *username;
+  const char *keyfile;
+  const char *passphrase;
+} CAuthCred;
+
+/**
  * Append data to an smbuf string buffer.
  */
 extern void smbuf_append(void *buf, const char *data);
@@ -263,30 +274,30 @@ uintptr_t CreateSessionC(const char *endpoint,
 /**
  * Create a new HSM session that authenticates with several credentials.
  *
- * `credentials_json` is a JSON array, one object per admin:
+ * `credentials` is a pointer to an array of `CAuthCred` structs, one per
+ * admin; `credentials_len` is the number of entries.  Each field within
+ * `CAuthCred` is a NUL-terminated C string (NULL is treated as empty).
  *
- * ```json
- * [
- *   {"user":"ADMIN","keyfile":"/keys/kp-admin.key","passphrase":""},
- *   {"user":"ADMIN2","keyfile":"/keys/kp-admin2.key","passphrase":"s3cret-pass"}
- * ]
- * ```
- *
- * `keyfile` and `passphrase` are optional. As with `CreateSessionC`, the
- * credentials are not sent to the HSM here: `prepare_auth` calls
- * `session_append_auth` for each entry, in order, before the first command.
+ * As with `CreateSessionC`, the credentials are not sent to the HSM here:
+ * `prepare_auth` calls `session_append_auth` for each entry, in order,
+ * before the first command.
  *
  * Returns a non-zero `uintptr_t` handle on success, `0` on failure
- * (including malformed or empty JSON).
+ * (including a NULL or empty credentials pointer).
  *
  * # Safety
- * All `*const c_char` parameters must be valid NUL-terminated C strings or NULL.
+ * - `credentials` must point to a valid array of at least `credentials_len`
+ *   initialised `CAuthCred` values, or be NULL (which returns 0).
+ * - All `*const c_char` fields within each `CAuthCred`, and the `endpoint`,
+ *   `instance_id`, `crypto_unit_id`, and `iam_token` parameters, must be
+ *   valid NUL-terminated C strings or NULL.
  */
 uintptr_t CreateSessionMultiAuthC(const char *endpoint,
                                   int port,
                                   const char *instance_id,
                                   const char *crypto_unit_id,
-                                  const char *credentials_json,
+                                  const struct CAuthCred *credentials,
+                                  uintptr_t credentials_len,
                                   const char *iam_token);
 
 /**
