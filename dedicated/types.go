@@ -463,12 +463,12 @@ type AuthSpec struct {
 	KeyFile string
 }
 
-// sessionAuth is one authenticated user of a session. Its JSON form is the
-// contract with the native CreateSessionMultiAuthC export.
+// sessionAuth is one authenticated user of a session. A list of them is passed
+// to the native CreateSessionMultiAuthC export as an array of CAuthCred.
 type sessionAuth struct {
-	User       string `json:"user"`
-	Keyfile    string `json:"keyfile"`
-	Passphrase string `json:"passphrase"`
+	User       string
+	Keyfile    string
+	Passphrase string
 }
 
 // session represents a cryptounit session

@@ -6,7 +6,6 @@ import (
 	"crypto/sha256"
 	"embed"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"io"
 	"os"
@@ -57,9 +56,9 @@ var (
 	fileLoadFunc         func(sessionID uintptr, filename *byte, headers *byte, result **byte) int32
 	restartFunc          func(sessionID uintptr, headers *byte, result **byte) int32
 
-	// Multi-user session creation: authenticates several users (a JSON list of
-	// {user, keyfile, passphrase}) on one session.
-	createSessionMultiAuthFunc func(endpoint *byte, port int32, instanceID *byte, cryptoUnitID *byte, authsJSON *byte, iamToken *byte) uintptr
+	// Multi-user session creation: authenticates several users (an array of
+	// cAuthCred) on one session.
+	createSessionMultiAuthFunc func(endpoint *byte, port int32, instanceID *byte, cryptoUnitID *byte, credentials *cAuthCred, credentialsLen uintptr, iamToken *byte) uintptr
 
 	// Single authenticator for the client - used to get/refresh IAM tokens
 	clientAuthenticator core.Authenticator
@@ -240,6 +239,14 @@ func getLibraryPath(libName string) (path string, trusted bool) {
 	return "", false
 }
 
+// cAuthCred mirrors the C struct CAuthCred of libkpd_hsm_manager.h: three
+// NUL-terminated strings (NULL is treated as empty by the library).
+type cAuthCred struct {
+	username   *byte
+	keyfile    *byte
+	passphrase *byte
+}
+
 // Helper functions for string conversion
 
 // cString converts a Go string to a null-terminated byte slice
@@ -331,15 +338,6 @@ func callCreateSession(endpoint, instanceID, cryptoUnitID string, auths []sessio
 	if len(auths) == 0 {
 		return 0, fmt.Errorf("at least one session user is required")
 	}
-	var authsJSON string
-	if len(auths) > 1 {
-		encoded, err := json.Marshal(auths)
-		if err != nil {
-			return 0, fmt.Errorf("failed to encode session users: %w", err)
-		}
-		authsJSON = string(encoded)
-	}
-
 	// Store the authenticator - it will be used for all token requests
 	clientAuthenticator = authenticator
 
@@ -367,14 +365,25 @@ func callCreateSession(endpoint, instanceID, cryptoUnitID string, auths []sessio
 			cString(token),
 		)
 	} else {
+		creds := make([]cAuthCred, len(auths))
+		for i, a := range auths {
+			creds[i] = cAuthCred{
+				username:   cString(a.User),
+				keyfile:    cString(a.Keyfile),
+				passphrase: cString(a.Passphrase),
+			}
+		}
 		sessionID = createSessionMultiAuthFunc(
 			cString(endpoint),
 			int32(port),
 			cString(instanceID),
 			cString(cryptoUnitID),
-			cString(authsJSON),
+			&creds[0],
+			uintptr(len(creds)),
 			cString(token),
 		)
+		// The strings referenced by creds must outlive the native call.
+		runtime.KeepAlive(creds)
 	}
 
 	if sessionID == 0 {
